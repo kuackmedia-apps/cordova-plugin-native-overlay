@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="cordova-plugin-native-overlay"
+        version="1.0.0">
+
+    <name>NativeOverlay</name>
+    <description>Shows a native full-screen screenshot overlay on top of the WebView</description>
+    <license>MIT</license>
+    <repo>https://github.com/kuackmedia-apps/cordova-plugin-native-overlay</repo>
+
+    <js-module src="www/NativeOverlay.js" name="NativeOverlay">
+        <clobbers target="NativeOverlay" />
+    </js-module>
+
+    <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="NativeOverlay">
+                <param name="ios-package" value="NativeOverlay" />
+            </feature>
+        </config-file>
+        <source-file src="src/ios/NativeOverlay.swift" />
+    </platform>
+
+    <platform name="android">
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="NativeOverlay">
+                <param name="android-package" value="com.kuackmedia.nativeoverlay.NativeOverlay" />
+            </feature>
+        </config-file>
+        <source-file src="src/android/NativeOverlay.java" target-dir="src/com/kuackmedia/nativeoverlay" />
+    </platform>
+
+</plugin>

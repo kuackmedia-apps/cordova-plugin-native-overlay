@@ -1,0 +1,22 @@
+{
+    "name": "cordova-plugin-native-overlay",
+    "version": "1.0.0",
+    "description": "Shows a native full-screen screenshot overlay on top of the WebView",
+    "cordova": {
+        "id": "cordova-plugin-native-overlay",
+        "platforms": ["ios", "android"]
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/kuackmedia-apps/cordova-plugin-native-overlay.git"
+    },
+    "keywords": ["cordova", "overlay", "screenshot", "update"],
+    "license": "MIT",
+    "engines": {
+        "cordovaDependencies": {
+            "1.0.0": {
+                "cordova": ">=9.0.0"
+            }
+        }
+    }
+}
