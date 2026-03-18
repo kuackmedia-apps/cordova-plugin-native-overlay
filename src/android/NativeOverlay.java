@@ -116,6 +116,12 @@ public class NativeOverlay extends CordovaPlugin {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                ViewGroup decorView = getDecorView();
+                if (decorView.findViewById(OVERLAY_ID) != null) {
+                    callbackContext.error("Overlay is visible, skipping capture");
+                    return;
+                }
+
                 View rootView = activity.getWindow().getDecorView().getRootView();
                 int width = rootView.getWidth();
                 int height = rootView.getHeight();

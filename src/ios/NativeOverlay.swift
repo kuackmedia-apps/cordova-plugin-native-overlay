@@ -8,16 +8,31 @@ class NativeOverlay: CDVPlugin {
     private static let screenshotFileName = "nativeoverlay_screenshot.jpg"
     private var feedbackShown = false
 
+    override func pluginInitialize() {
+        super.pluginInitialize()
+        DispatchQueue.main.async { [weak self] in
+            // Set WKWebView native UIView background to match app theme.
+            // Default is .white, which causes a white flash if splash hides
+            // before the web content process has rendered the CSS background.
+            self?.webView?.backgroundColor = UIColor.black
+            self?.webView?.isOpaque = false
+        }
+    }
+
     private var screenshotPath: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return docs.appendingPathComponent(NativeOverlay.screenshotFileName)
+    }
+
+    private func getWindow() -> UIWindow? {
+        return self.viewController.view.window
     }
 
     @objc(show:)
     func show(command: CDVInvokedUrlCommand) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self,
-                  let window = self.viewController.view.window else {
+                  let window = self.getWindow() else {
                 let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "No window available")
                 self?.commandDelegate.send(result, callbackId: command.callbackId)
                 return
@@ -36,7 +51,7 @@ class NativeOverlay: CDVPlugin {
             overlay.tag = NativeOverlay.overlayTag
             overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-            self.viewController.view.addSubview(overlay)
+            window.addSubview(overlay)
 
             let result = CDVPluginResult(status: CDVCommandStatus_OK)
             self.commandDelegate.send(result, callbackId: command.callbackId)
@@ -56,15 +71,22 @@ class NativeOverlay: CDVPlugin {
     func save(command: CDVInvokedUrlCommand) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self,
-                  let window = self.viewController.view.window else {
+                  let window = self.getWindow() else {
                 let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "No window available")
                 self?.commandDelegate.send(result, callbackId: command.callbackId)
                 return
             }
 
-            let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+            if window.viewWithTag(NativeOverlay.overlayTag) != nil {
+                let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "Overlay is visible, skipping capture")
+                self.commandDelegate.send(result, callbackId: command.callbackId)
+                return
+            }
+
+            let captureView = self.webView!
+            let renderer = UIGraphicsImageRenderer(bounds: captureView.bounds)
             let screenshot = renderer.image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                captureView.drawHierarchy(in: captureView.bounds, afterScreenUpdates: true)
             }
 
             self.commandDelegate.run(inBackground: {
@@ -88,24 +110,27 @@ class NativeOverlay: CDVPlugin {
     @objc(showSaved:)
     func showSaved(command: CDVInvokedUrlCommand) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "Plugin deallocated")
+            guard let self = self,
+                  let window = self.getWindow() else {
+                let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "No window available")
                 self?.commandDelegate.send(result, callbackId: command.callbackId)
                 return
             }
 
             let path = self.screenshotPath.path
             guard FileManager.default.fileExists(atPath: path),
-                  let image = UIImage(contentsOfFile: path) else {
+                  let rawImage = UIImage(contentsOfFile: path) else {
                 let result = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "No saved screenshot")
                 self.commandDelegate.send(result, callbackId: command.callbackId)
                 return
             }
 
+            let image = self.forceDecompress(rawImage)
+
             self.removeOverlay()
             self.feedbackShown = false
 
-            let overlay = UIImageView(frame: self.viewController.view.bounds)
+            let overlay = UIImageView(frame: window.bounds)
             overlay.image = image
             overlay.contentMode = .scaleAspectFill
             overlay.tag = NativeOverlay.overlayTag
@@ -115,7 +140,7 @@ class NativeOverlay: CDVPlugin {
             let tapGesture = UITapGestureRecognizer(target: self, action: #selector(self.onOverlayTapped))
             overlay.addGestureRecognizer(tapGesture)
 
-            self.viewController.view.addSubview(overlay)
+            window.addSubview(overlay)
 
             let result = CDVPluginResult(status: CDVCommandStatus_OK)
             self.commandDelegate.send(result, callbackId: command.callbackId)
@@ -126,14 +151,16 @@ class NativeOverlay: CDVPlugin {
         guard !feedbackShown else { return }
         feedbackShown = true
 
-        guard let overlay = self.viewController.view.viewWithTag(NativeOverlay.overlayTag) else { return }
+        guard let window = getWindow(),
+              let overlay = window.viewWithTag(NativeOverlay.overlayTag) else { return }
 
         let feedback = UIView(frame: overlay.bounds)
         feedback.tag = NativeOverlay.feedbackTag
         feedback.backgroundColor = UIColor.black.withAlphaComponent(0.0)
         feedback.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-        let spinner = UIActivityIndicatorView(style: .whiteLarge)
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.color = .white
         spinner.center = CGPoint(x: feedback.bounds.midX, y: feedback.bounds.midY)
         spinner.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin, .flexibleTopMargin, .flexibleBottomMargin]
         spinner.startAnimating()
@@ -159,8 +186,29 @@ class NativeOverlay: CDVPlugin {
         })
     }
 
+    private func forceDecompress(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return image }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let decoded = context.makeImage() else { return image }
+        return UIImage(cgImage: decoded, scale: image.scale, orientation: image.imageOrientation)
+    }
+
     private func removeOverlay() {
-        self.viewController.view.viewWithTag(NativeOverlay.overlayTag)?.removeFromSuperview()
+        guard let window = getWindow() else { return }
+        window.viewWithTag(NativeOverlay.feedbackTag)?.removeFromSuperview()
+        window.viewWithTag(NativeOverlay.overlayTag)?.removeFromSuperview()
         feedbackShown = false
     }
 }
