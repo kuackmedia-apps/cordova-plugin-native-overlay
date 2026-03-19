@@ -122,9 +122,11 @@ public class NativeOverlay extends CordovaPlugin {
                     return;
                 }
 
-                View rootView = activity.getWindow().getDecorView().getRootView();
-                int width = rootView.getWidth();
-                int height = rootView.getHeight();
+                // Capture WebView only (not decorView) so the screenshot
+                // matches the WebView coordinate space for <img> display
+                View captureView = webView.getView();
+                int width = captureView.getWidth();
+                int height = captureView.getHeight();
 
                 if (width == 0 || height == 0) {
                     callbackContext.error("View has zero dimensions");
@@ -134,23 +136,30 @@ public class NativeOverlay extends CordovaPlugin {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     final Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                     try {
-                        PixelCopy.request(activity.getWindow(), bitmap, new PixelCopy.OnPixelCopyFinishedListener() {
+                        // PixelCopy needs screen coordinates of the WebView
+                        int[] location = new int[2];
+                        captureView.getLocationInWindow(location);
+                        android.graphics.Rect srcRect = new android.graphics.Rect(
+                            location[0], location[1],
+                            location[0] + width, location[1] + height
+                        );
+                        PixelCopy.request(activity.getWindow(), srcRect, bitmap, new PixelCopy.OnPixelCopyFinishedListener() {
                             @Override
                             public void onPixelCopyFinished(int copyResult) {
                                 if (copyResult == PixelCopy.SUCCESS) {
                                     saveBitmapToFile(bitmap, callbackContext);
                                 } else {
-                                    Bitmap canvasBitmap = captureWithCanvas(rootView);
+                                    Bitmap canvasBitmap = captureWithCanvas(captureView);
                                     saveBitmapToFile(canvasBitmap, callbackContext);
                                 }
                             }
                         }, new Handler(Looper.getMainLooper()));
                     } catch (Exception e) {
-                        Bitmap canvasBitmap = captureWithCanvas(rootView);
+                        Bitmap canvasBitmap = captureWithCanvas(captureView);
                         saveBitmapToFile(canvasBitmap, callbackContext);
                     }
                 } else {
-                    Bitmap canvasBitmap = captureWithCanvas(rootView);
+                    Bitmap canvasBitmap = captureWithCanvas(captureView);
                     saveBitmapToFile(canvasBitmap, callbackContext);
                 }
             }
